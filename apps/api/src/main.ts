@@ -26,9 +26,10 @@ async function bootstrap(): Promise<void> {
   });
   app.enableShutdownHooks();
 
-  const port = config.get('API_PORT', { infer: true });
-  await app.listen(port);
-  new Logger('Bootstrap').log(`Tren API listening on http://localhost:${port}/api`);
+  // Hosts like Render/Railway inject $PORT; fall back to API_PORT for local dev.
+  const port = process.env.PORT ? Number(process.env.PORT) : config.get('API_PORT', { infer: true });
+  await app.listen(port, '0.0.0.0');
+  new Logger('Bootstrap').log(`Tren API listening on :${port}/api`);
 }
 
 void bootstrap();

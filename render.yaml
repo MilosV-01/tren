@@ -1,0 +1,52 @@
+# Render Blueprint — provisions the Tren API + a Postgres database.
+# In Render: New → Blueprint → connect this repo. Then fill the `sync: false`
+# vars (from Cloudflare R2) and set WEB_ORIGIN to your Vercel domain.
+databases:
+  - name: tren-db
+    databaseName: tren
+    plan: free
+
+services:
+  - type: web
+    name: tren-api
+    runtime: docker
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tren-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: WEB_ORIGIN
+        sync: false # -> https://<your-vercel-domain>
+      - key: S3_ENDPOINT
+        sync: false # -> https://<account_id>.r2.cloudflarestorage.com
+      - key: S3_REGION
+        value: auto
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_BUCKET
+        sync: false # -> tren-media
+      - key: S3_FORCE_PATH_STYLE
+        value: 'true'
+      - key: S3_PUBLIC_URL
+        sync: false # -> R2 public bucket URL / custom domain
+      - key: MAX_UPLOAD_BYTES
+        value: '209715200'
+      - key: RETENTION_FREE_DAYS
+        value: '7'
+      - key: RETENTION_PREMIUM_DAYS
+        value: '90'
+      - key: CLEANUP_CRON_ENABLED
+        value: 'false'

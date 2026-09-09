@@ -1,99 +1,87 @@
 # Deploy — Tren u produkciju
 
-Tren je monorepo sa tri servisa koji idu na tri mesta:
+Tri komada, tri servisa (svi imaju free tier):
 
-| Deo | Šta je | Preporučeni hosting | Free tier |
-| --- | --- | --- | --- |
-| `apps/web` | Next.js frontend | **Vercel** | da |
-| `apps/api` | NestJS REST API | **Railway** ili **Render** | da (uz limite) |
-| PostgreSQL | baza | **Neon** | da |
-| Object storage | fotografije/video | **Cloudflare R2** (S3-kompatibilan) | 10 GB besplatno |
-
-> Vercel odlično hostuje `apps/web`. `apps/api` (dugotrajni proces, Prisma pool,
-> in-process ZIP, `@nestjs/schedule`) NE ide na Vercel serverless — drži ga na
-> Railway/Render kao običan Node servis.
+| Deo | Hosting | Napomena |
+| --- | --- | --- |
+| `apps/web` (Next.js) | **Vercel** | `apps/web/vercel.json` već podešen za monorepo |
+| `apps/api` (NestJS) | **Render** (Docker) | `apps/api/Dockerfile` + `render.yaml` blueprint |
+| PostgreSQL | **Render Postgres** (iz `render.yaml`) ili **Neon** | migracije: `prisma migrate deploy` (radi automatski u Docker CMD) |
+| Object storage | **Cloudflare R2** (S3-kompatibilan) | 10 GB besplatno; jedini korak koji nema blueprint |
 
 ---
 
-## 1. Git → GitHub
+## Opcija A — pošalji mi pristup, ja izvršim sve
+
+Napravi 4 stvari i pošalji mi vrednosti; ja onda odradim ceo deploy + konfiguraciju:
+
+1. **GitHub repo** (prazan, npr. `tren`) + **Personal Access Token** (scope `repo`).
+   → pošalji: URL repoa + token.
+2. **Vercel** nalog + **token** (Account Settings → Tokens).
+   → pošalji: token (+ team slug ako koristiš tim).
+3. **Render** nalog + **API key** (Account Settings → API Keys).
+   → pošalji: API key.
+4. **Cloudflare R2**: napravi bucket `tren-media` + R2 API token (Access Key ID + Secret) +
+   uključi javni pristup bucketu (ili custom domen).
+   → pošalji: `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_PUBLIC_URL`.
+
+Token/ključeve tretiram kao tajne, koristim ih samo za ovaj deploy.
+
+---
+
+## Opcija B — sam kroz dashboarde
+
+### 1. GitHub
 
 ```bash
-# repo je već inicijalizovan lokalno (git init + prvi commit)
-git remote add origin https://github.com/<tvoj-nalog>/tren.git
-git branch -M main
+git remote add origin https://github.com/<nalog>/tren.git
 git push -u origin main
 ```
 
-## 2. PostgreSQL (Neon)
+### 2. Storage — Cloudflare R2
 
-1. Napravi projekat na https://neon.tech → dobiješ `DATABASE_URL` (`postgresql://...`).
-2. Lokalno pokreni migraciju na tu bazu:
-   ```bash
-   cd apps/api
-   DATABASE_URL="<neon-url>" pnpm exec prisma migrate deploy
-   DATABASE_URL="<neon-url>" pnpm exec prisma db seed   # opciono: demo nalog
-   ```
-
-## 3. Object storage (Cloudflare R2)
-
-1. R2 → **Create bucket** (npr. `tren-media`).
-2. **Settings → CORS policy** za bucket:
+1. R2 → **Create bucket**: `tren-media`.
+2. **Settings → CORS policy**:
    ```json
-   [{ "AllowedOrigins": ["https://<tvoj-web-domen>"], "AllowedMethods": ["GET","PUT"], "AllowedHeaders": ["*"], "MaxAgeSeconds": 3600 }]
+   [{ "AllowedOrigins": ["https://<web-domen>"], "AllowedMethods": ["GET","PUT"], "AllowedHeaders": ["*"], "MaxAgeSeconds": 3600 }]
    ```
-3. Napravi **R2 API token** (Access Key ID + Secret).
-4. Uključi **public access** ili priključi custom domen na bucket → to je `S3_PUBLIC_URL`.
-5. Vrednosti:
-   - `S3_ENDPOINT=https://<account_id>.r2.cloudflarestorage.com`
-   - `S3_REGION=auto`
-   - `S3_FORCE_PATH_STYLE=true`
-   - `S3_PUBLIC_URL=https://<r2-public-ili-custom-domen>`
+3. **R2 API Tokens** → napravi token → zapamti Access Key ID + Secret.
+4. Uključi **Public Development URL** ili priključi custom domen → to je `S3_PUBLIC_URL`.
+5. `S3_ENDPOINT = https://<account_id>.r2.cloudflarestorage.com`, `S3_REGION = auto`,
+   `S3_FORCE_PATH_STYLE = true`.
 
-## 4. API (Railway ili Render)
+### 3. API + baza — Render (blueprint)
 
-Novi servis iz GitHub repo-a, **root** = `apps/api`.
+1. Render → **New → Blueprint** → izaberi repo. `render.yaml` pravi `tren-api` (Docker) +
+   `tren-db` (Postgres). `DATABASE_URL` i `JWT_SECRET` se popune sami.
+2. Popuni vrednosti označene `sync: false`: `WEB_ORIGIN` (Vercel domen — vratićeš se posle
+   koraka 4), `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_BUCKET=tren-media`,
+   `S3_PUBLIC_URL`.
+3. Deploy. Docker CMD sam pokrene `prisma migrate deploy`. Health: `/api/health`.
+4. (opciono) demo nalog: u Render Shell-u `cd apps/api && pnpm exec prisma db seed`.
 
-- **Build:** `cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @tren/shared build && pnpm --filter @tren/api build`
-- **Start:** `node dist/main.js`
-- **Pre-deploy / release:** `cd apps/api && pnpm exec prisma migrate deploy`
+> Alternativa za bazu: **Neon** (durabilniji free tier). Napravi projekat, uzmi `DATABASE_URL`,
+> i stavi ga kao env var na `tren-api` umesto Render Postgresa.
 
-Env varijable (API):
+### 4. Web — Vercel
 
-| Ključ | Vrednost |
-| --- | --- |
-| `NODE_ENV` | `production` |
-| `API_PORT` | port koji platforma dodeli (`$PORT`) — ili ostavi 4000 ako platforma mapira |
-| `WEB_ORIGIN` | `https://<tvoj-web-domen>` |
-| `DATABASE_URL` | Neon URL |
-| `JWT_SECRET` | dugačak random string (`openssl rand -base64 48`) |
-| `JWT_EXPIRES_IN` | `7d` |
-| `S3_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_BUCKET`, `S3_FORCE_PATH_STYLE`, `S3_PUBLIC_URL` | iz koraka 3 |
-| `MAX_UPLOAD_BYTES` | `209715200` |
-| `RETENTION_FREE_DAYS` / `RETENTION_PREMIUM_DAYS` | `7` / `90` |
-| `CLEANUP_CRON_ENABLED` | `false` (Faza 1) |
-
-## 5. Web (Vercel)
-
-**Import Project** iz GitHub repo-a.
+**Import Project** → izaberi repo.
 
 - **Root Directory:** `apps/web`
-- Framework: Next.js (auto). `apps/web/vercel.json` već postavlja install/build komande
-  koje prvo grade `@tren/shared`.
+- Framework Next.js (auto). `apps/web/vercel.json` postavlja install/build (prvo gradi `@tren/shared`).
+- Env varijable:
 
-Env varijable (Vercel → Settings → Environment Variables):
+  | Ključ | Vrednost |
+  | --- | --- |
+  | `NEXT_PUBLIC_APP_URL` | `https://<web-domen>` |
+  | `NEXT_PUBLIC_SITE_URL` | `https://<web-domen>` |
+  | `NEXT_PUBLIC_API_URL` | `https://<render-api-domen>` |
+  | `API_INTERNAL_URL` | `https://<render-api-domen>` |
 
-| Ključ | Vrednost |
-| --- | --- |
-| `NEXT_PUBLIC_APP_URL` | `https://<tvoj-web-domen>` |
-| `NEXT_PUBLIC_SITE_URL` | `https://<tvoj-web-domen>` (kanonski, za SEO) |
-| `NEXT_PUBLIC_API_URL` | `https://<tvoj-api-domen>` |
-| `API_INTERNAL_URL` | `https://<tvoj-api-domen>` (server → API; isti kao gore) |
+Posle deploya vrati `WEB_ORIGIN` na Render (`tren-api`) na Vercel domen i re-deploy API.
 
-Deploy. QR kodovi automatski koriste domen sa kog je dashboard otvoren.
+### 5. Provera
 
-## 6. Provera posle deploya
-
-- `https://<web>/` → landing (SEO, OG, `/robots.txt`, `/sitemap.xml`)
-- Registracija → kreiranje događaja → QR
-- Sa telefona: skeniraj QR → unesi ime → pošalji fotku → pojavi se u galeriji
-- „Preuzmi sve (ZIP)" i PIN zaštita
+- `https://<web>/` → landing, `/robots.txt`, `/sitemap.xml`, OG
+- Registracija → događaj → QR
+- Telefon: QR → ime → pošalji fotku → galerija → „Preuzmi sve (ZIP)" → PIN
