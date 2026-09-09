@@ -29,6 +29,16 @@ sa `Offer`-ima + `FAQPage`) u `src/components/site/json-ld.tsx`. Privatne strani
 **Ostalo:** `not-found.tsx`, `dashboard/loading.tsx`, `?plan=premium` na `/register` i
 `/dashboard/events/new` (pretselektuje paket), QR kartica sa dugmićima Kopiraj/PNG/Štampaj.
 
+**Brend + slika:** Tren logo (kamera mark) kao SVG komponenta
+(`src/components/site/logo.tsx`, `public/logo-mark.svg`) korišćen u header/footer/auth/guest/404
+i za favicon/OG. Prava fotografija u hero sekciji (`public/hero.jpg`, Unsplash License) sa
+lebdećim „galerija uživo" i „upload" karticama.
+
+**Deploy (pripremljeno, push radi korisnik):** lokalni git repo (`main`, prvi commit),
+`apps/web/vercel.json` (monorepo install/build), `apps/api/prisma/migrations/…_init`
+(deployabilna migracija), `DEPLOY.md` — Web→Vercel, API→Railway/Render, baza→Neon,
+storage→Cloudflare R2, sa tabelama env varijabli.
+
 ### Verifikacija Faze 2 (pokrenuto na ovoj mašini)
 
 - `pnpm --filter @tren/api build`, `pnpm --filter @tren/web build` — ✅
