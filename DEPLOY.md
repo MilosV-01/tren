@@ -1,87 +1,63 @@
-# Deploy — Tren u produkciju
+# Deploy — Tren uživo
 
-Tri komada, tri servisa (svi imaju free tier):
+## Najjednostavnije: jedan Render blueprint (1 nalog, ~5 min)
 
-| Deo | Hosting | Napomena |
-| --- | --- | --- |
-| `apps/web` (Next.js) | **Vercel** | `apps/web/vercel.json` već podešen za monorepo |
-| `apps/api` (NestJS) | **Render** (Docker) | `apps/api/Dockerfile` + `render.yaml` blueprint |
-| PostgreSQL | **Render Postgres** (iz `render.yaml`) ili **Neon** | migracije: `prisma migrate deploy` (radi automatski u Docker CMD) |
-| Object storage | **Cloudflare R2** (S3-kompatibilan) | 10 GB besplatno; jedini korak koji nema blueprint |
+`render.yaml` deployuje **sve odjednom** — web + API + PostgreSQL — i sam ih poveže.
+Fajlovi (fotografije/video) idu na lokalni disk (`STORAGE_DRIVER=disk`), pa **ne treba
+nikakav S3/Cloudflare nalog niti ijedan token za lepljenje**.
 
----
+### Koraci
 
-## Opcija A — pošalji mi pristup, ja izvršim sve
-
-Napravi 4 stvari i pošalji mi vrednosti; ja onda odradim ceo deploy + konfiguraciju:
-
-1. **GitHub repo** (prazan, npr. `tren`) + **Personal Access Token** (scope `repo`).
-   → pošalji: URL repoa + token.
-2. **Vercel** nalog + **token** (Account Settings → Tokens).
-   → pošalji: token (+ team slug ako koristiš tim).
-3. **Render** nalog + **API key** (Account Settings → API Keys).
-   → pošalji: API key.
-4. **Cloudflare R2**: napravi bucket `tren-media` + R2 API token (Access Key ID + Secret) +
-   uključi javni pristup bucketu (ili custom domen).
-   → pošalji: `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_PUBLIC_URL`.
-
-Token/ključeve tretiram kao tajne, koristim ih samo za ovaj deploy.
-
----
-
-## Opcija B — sam kroz dashboarde
-
-### 1. GitHub
-
-```bash
-git remote add origin https://github.com/<nalog>/tren.git
-git push -u origin main
-```
-
-### 2. Storage — Cloudflare R2
-
-1. R2 → **Create bucket**: `tren-media`.
-2. **Settings → CORS policy**:
-   ```json
-   [{ "AllowedOrigins": ["https://<web-domen>"], "AllowedMethods": ["GET","PUT"], "AllowedHeaders": ["*"], "MaxAgeSeconds": 3600 }]
+1. **Gurni kod na GitHub** (ili GitLab):
+   ```bash
+   git remote add origin https://github.com/<nalog>/tren.git
+   git push -u origin main
    ```
-3. **R2 API Tokens** → napravi token → zapamti Access Key ID + Secret.
-4. Uključi **Public Development URL** ili priključi custom domen → to je `S3_PUBLIC_URL`.
-5. `S3_ENDPOINT = https://<account_id>.r2.cloudflarestorage.com`, `S3_REGION = auto`,
-   `S3_FORCE_PATH_STYLE = true`.
+2. Napravi nalog na **[render.com](https://render.com)** i poveži GitHub (OAuth, jedan klik).
+3. Render → **New → Blueprint** → izaberi `tren` repo → **Apply**.
+   Render pravi `tren-web`, `tren-api` i `tren-db`; `JWT_SECRET`, `DATABASE_URL` i
+   međusobni URL-ovi se popunjavaju automatski.
+4. Sačekaj prvi build (~3–5 min). Otvori `https://tren-web-XXXX.onrender.com`.
+5. (opciono) Demo nalog: `tren-api` → **Shell** → `cd apps/api && pnpm exec prisma db seed`
+   → login `demo@tren.rs` / `demo1234`.
 
-### 3. API + baza — Render (blueprint)
+### Šta znati o free tier-u
 
-1. Render → **New → Blueprint** → izaberi repo. `render.yaml` pravi `tren-api` (Docker) +
-   `tren-db` (Postgres). `DATABASE_URL` i `JWT_SECRET` se popune sami.
-2. Popuni vrednosti označene `sync: false`: `WEB_ORIGIN` (Vercel domen — vratićeš se posle
-   koraka 4), `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_BUCKET=tren-media`,
-   `S3_PUBLIC_URL`.
-3. Deploy. Docker CMD sam pokrene `prisma migrate deploy`. Health: `/api/health`.
-4. (opciono) demo nalog: u Render Shell-u `cd apps/api && pnpm exec prisma db seed`.
+| | |
+| --- | --- |
+| **Fajlovi su efemerni** | Na free planu nema perzistentnog diska → galerije se brišu na svaki redeploy i pri dnevnom restartu. Za trajno: vidi „Trajno čuvanje" niže. |
+| **Servisi „spavaju"** | Free web servisi se gase posle 15 min neaktivnosti; prvi zahtev posle toga čeka ~50 s. |
+| **Baza ističe** | Render free Postgres traje 30 dana. Za duže: napravi novu ili pređi na [Neon](https://neon.tech) (`DATABASE_URL` env var na `tren-api`). |
 
-> Alternativa za bazu: **Neon** (durabilniji free tier). Napravi projekat, uzmi `DATABASE_URL`,
-> i stavi ga kao env var na `tren-api` umesto Render Postgresa.
+### Trajno čuvanje fotografija (kad zatreba)
 
-### 4. Web — Vercel
+**Opcija A — Render disk** (najmanje koraka, plaćeno ~$1–7/mo):
+u `render.yaml` otkomentariši `disk:` blok pod `tren-api` i promeni `plan: free` → `plan: starter`.
 
-**Import Project** → izaberi repo.
+**Opcija B — Cloudflare R2** (besplatno do 10 GB):
+1. R2 → Create bucket `tren-media`; CORS: `AllowedOrigins: ["https://<web-domen>"]`, methods `GET,PUT`.
+2. R2 API token → Access Key ID + Secret; uključi javni pristup bucketu → to je `S3_PUBLIC_URL`.
+3. Na `tren-api` env: `STORAGE_DRIVER=s3`, `S3_ENDPOINT=https://<acc>.r2.cloudflarestorage.com`,
+   `S3_REGION=auto`, `S3_FORCE_PATH_STYLE=true`, `S3_BUCKET=tren-media`,
+   `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_PUBLIC_URL`. Redeploy.
 
-- **Root Directory:** `apps/web`
-- Framework Next.js (auto). `apps/web/vercel.json` postavlja install/build (prvo gradi `@tren/shared`).
-- Env varijable:
+---
 
-  | Ključ | Vrednost |
-  | --- | --- |
-  | `NEXT_PUBLIC_APP_URL` | `https://<web-domen>` |
-  | `NEXT_PUBLIC_SITE_URL` | `https://<web-domen>` |
-  | `NEXT_PUBLIC_API_URL` | `https://<render-api-domen>` |
-  | `API_INTERNAL_URL` | `https://<render-api-domen>` |
+## Alternativa: web na Vercel + API na Render
 
-Posle deploya vrati `WEB_ORIGIN` na Render (`tren-api`) na Vercel domen i re-deploy API.
+Bolji web hosting (bez „spavanja", brže). Dva naloga.
 
-### 5. Provera
+- **Web → Vercel:** Import repo, **Root Directory = `apps/web`** (`apps/web/vercel.json` već
+  podešava build). Env: `NEXT_PUBLIC_API_URL`, `API_INTERNAL_URL` = Render API URL;
+  `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_SITE_URL` = Vercel URL.
+- **API + baza → Render:** New → Blueprint (koristi `render.yaml`), pa obriši `tren-web`
+  servis iz njega ili ga ignoriši; na `tren-api` postavi `WEB_ORIGIN` = Vercel domen.
 
-- `https://<web>/` → landing, `/robots.txt`, `/sitemap.xml`, OG
-- Registracija → događaj → QR
-- Telefon: QR → ime → pošalji fotku → galerija → „Preuzmi sve (ZIP)" → PIN
+---
+
+## Provera posle deploya
+
+- `https://<web>/` → landing, `/robots.txt`, `/sitemap.xml`, OG slika
+- Registracija → događaj → QR kod
+- Telefon: skeniraj QR → ime → pošalji fotku → pojavi se u galeriji
+- „Preuzmi sve (ZIP)" i PIN zaštićena galerija

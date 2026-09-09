@@ -29,3 +29,7 @@ Thumbs.db
 # deploy tooling
 .vercel
 .turbo
+
+# local disk storage (STORAGE_DRIVER=disk)
+.storage/
+apps/api/.storage/

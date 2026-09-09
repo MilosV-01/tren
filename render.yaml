@@ -1,20 +1,36 @@
-# Render Blueprint — provisions the Tren API + a Postgres database.
-# In Render: New → Blueprint → connect this repo. Then fill the `sync: false`
-# vars (from Cloudflare R2) and set WEB_ORIGIN to your Vercel domain.
+# Tren — jedan Render blueprint deployuje SVE: web + API + baza.
+#
+# Render → New → Blueprint → izaberi ovaj repo → Apply.
+# Ništa ne moraš da lepiš: JWT se generiše, baza i URL-ovi se povezuju sami,
+# fajlovi idu na lokalni disk (STORAGE_DRIVER=disk).
+#
+# ⚠️ FREE plan = efemerni fajlovi: galerije se brišu na svaki redeploy i pri
+#    dnevnom restartu free instance. Za trajno čuvanje, jedno od:
+#      a) odblokiraj `disk:` niže + promeni `plan` API-ja u `starter` (plaćeno), ili
+#      b) STORAGE_DRIVER=s3 + Cloudflare R2 (besplatno 10 GB) — vidi DEPLOY.md.
+# ⚠️ Free Postgres na Render-u ističe posle 30 dana (napraviš novi ili pređeš na Neon).
+# ⚠️ Free web servisi "zaspu" posle 15 min neaktivnosti (~50 s hladan start).
+
 databases:
   - name: tren-db
     databaseName: tren
     plan: free
 
 services:
+  # ---- API (NestJS, Docker) --------------------------------------------------
   - type: web
     name: tren-api
     runtime: docker
+    plan: free
     dockerfilePath: ./apps/api/Dockerfile
     dockerContext: .
-    plan: free
     healthCheckPath: /api/health
     autoDeploy: true
+    # Za trajno čuvanje: otkomentariši (traži plaćeni plan iznad).
+    # disk:
+    #   name: tren-storage
+    #   mountPath: /data
+    #   sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
@@ -26,22 +42,15 @@ services:
         generateValue: true
       - key: JWT_EXPIRES_IN
         value: 7d
+      - key: STORAGE_DRIVER
+        value: disk
+      - key: STORAGE_DISK_PATH
+        value: /data
       - key: WEB_ORIGIN
-        sync: false # -> https://<your-vercel-domain>
-      - key: S3_ENDPOINT
-        sync: false # -> https://<account_id>.r2.cloudflarestorage.com
-      - key: S3_REGION
-        value: auto
-      - key: S3_ACCESS_KEY_ID
-        sync: false
-      - key: S3_SECRET_ACCESS_KEY
-        sync: false
-      - key: S3_BUCKET
-        sync: false # -> tren-media
-      - key: S3_FORCE_PATH_STYLE
-        value: 'true'
-      - key: S3_PUBLIC_URL
-        sync: false # -> R2 public bucket URL / custom domain
+        fromService:
+          type: web
+          name: tren-web
+          property: host
       - key: MAX_UPLOAD_BYTES
         value: '209715200'
       - key: RETENTION_FREE_DAYS
@@ -50,3 +59,37 @@ services:
         value: '90'
       - key: CLEANUP_CRON_ENABLED
         value: 'false'
+
+  # ---- Web (Next.js) -------------------------------------------------------
+  - type: web
+    name: tren-web
+    runtime: node
+    plan: free
+    rootDir: .
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @tren/shared build && pnpm --filter @tren/web build
+    startCommand: pnpm --filter @tren/web start
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: '20'
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          type: web
+          name: tren-api
+          property: host
+      - key: API_INTERNAL_URL
+        fromService:
+          type: web
+          name: tren-api
+          property: host
+      - key: NEXT_PUBLIC_APP_URL
+        fromService:
+          type: web
+          name: tren-web
+          property: host
+      - key: NEXT_PUBLIC_SITE_URL
+        fromService:
+          type: web
+          name: tren-web
+          property: host

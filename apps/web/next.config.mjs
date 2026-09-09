@@ -22,9 +22,16 @@ try {
   // No root .env (e.g. CI with real env vars) — that's fine.
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://tren.rs';
+// Render's blueprint `fromService` provides bare hostnames — add the scheme.
+const withScheme = (v, fallback) => {
+  const s = (v ?? '').trim();
+  if (!s) return fallback;
+  return /^https?:\/\//.test(s) ? s : `https://${s}`;
+};
+
+const API_URL = withScheme(process.env.NEXT_PUBLIC_API_URL, 'http://localhost:4000');
+const APP_URL = withScheme(process.env.NEXT_PUBLIC_APP_URL, 'http://localhost:3000');
+const SITE_URL = withScheme(process.env.NEXT_PUBLIC_SITE_URL, 'https://tren.rs');
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -35,9 +42,8 @@ const nextConfig = {
     NEXT_PUBLIC_APP_URL: APP_URL,
     // Canonical site URL for SEO (metadataBase / sitemap / OG). Real domain in prod.
     NEXT_PUBLIC_SITE_URL: SITE_URL,
-    // Server-only: URL the Next server uses to reach the API (defaults to the
-    // public one; override in Docker where the service name differs).
-    API_INTERNAL_URL: process.env.API_INTERNAL_URL ?? API_URL,
+    // Server-only: URL the Next server uses to reach the API.
+    API_INTERNAL_URL: withScheme(process.env.API_INTERNAL_URL, API_URL),
   },
 };
 

@@ -2,12 +2,19 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { raw } from 'express';
 import { AppModule } from './app.module';
 import { AppConfig } from './config/configuration';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bufferLogs: false });
   const config = app.get(ConfigService) as ConfigService<AppConfig, true>;
+
+  // Disk-storage data plane: accept a raw binary body on PUT /api/blob/* so the
+  // guest browser can upload straight to it (the JSON parser ignores non-JSON
+  // content types anyway, this just materializes req.body as a Buffer).
+  const maxBytes = config.get('MAX_UPLOAD_BYTES', { infer: true });
+  app.use('/api/blob', raw({ type: () => true, limit: maxBytes + 1024 }));
 
   app.setGlobalPrefix('api');
 
@@ -18,7 +25,12 @@ async function bootstrap(): Promise<void> {
   const corsOrigin =
     originSetting === '*'
       ? true
-      : originSetting.split(',').map((o) => o.trim()).filter(Boolean);
+      : originSetting
+          .split(',')
+          .map((o) => o.trim())
+          .filter(Boolean)
+          // Blueprint `fromService` gives a bare host — add the scheme.
+          .map((o) => (/^https?:\/\//.test(o) ? o : `https://${o}`));
   app.enableCors({
     origin: corsOrigin,
     credentials: true,

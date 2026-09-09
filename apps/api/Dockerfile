@@ -17,6 +17,7 @@ RUN pnpm install --frozen-lockfile \
 
 WORKDIR /app/apps/api
 ENV NODE_ENV=production
+RUN mkdir -p /data
 EXPOSE 4000
 
 # Apply pending migrations, then boot. $PORT (if set by the host) wins over API_PORT.

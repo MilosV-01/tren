@@ -34,10 +34,18 @@ sa `Offer`-ima + `FAQPage`) u `src/components/site/json-ld.tsx`. Privatne strani
 i za favicon/OG. Prava fotografija u hero sekciji (`public/hero.jpg`, Unsplash License) sa
 lebdećim „galerija uživo" i „upload" karticama.
 
-**Deploy (pripremljeno, push radi korisnik):** lokalni git repo (`main`, prvi commit),
-`apps/web/vercel.json` (monorepo install/build), `apps/api/prisma/migrations/…_init`
-(deployabilna migracija), `DEPLOY.md` — Web→Vercel, API→Railway/Render, baza→Neon,
-storage→Cloudflare R2, sa tabelama env varijabli.
+**Deploy (pripremljeno, push radi korisnik):** git repo (`main`), `apps/api/prisma/migrations/…_init`,
+`apps/api/Dockerfile`, **`render.yaml`** (jedan blueprint: web + API + Postgres, sve
+auto-povezano, bez tokena), `apps/web/vercel.json`, `DEPLOY.md`.
+
+**Storage sloj — dva drajvera** (`STORAGE_DRIVER`):
+- `disk` (default) — `LocalDiskStorageProvider` + `BlobController` (`/api/blob/*`, JWT-potpisani
+  URL-ovi). Fajlovi na disk/mount, bez S3 naloga. **Lokalno se sada koristi ovaj** (MinIO više
+  nije potreban).
+- `s3` — `S3StorageProvider` (AWS S3 / R2 / MinIO), direktan upload. Prebacivanje bez ostalih izmena.
+
+API sada poštuje `$PORT` (Render/Railway) i `RENDER_EXTERNAL_URL`; bare-hostname env
+vrednosti (Render `fromService`) se normalizuju na `https://`.
 
 ### Verifikacija Faze 2 (pokrenuto na ovoj mašini)
 

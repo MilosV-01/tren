@@ -6,7 +6,7 @@
     "dev": "next dev -p 3000",
     "gen:assets": "node scripts/gen-og.mjs",
     "build": "next build",
-    "start": "next start -p 3000",
+    "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {

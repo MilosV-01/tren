@@ -16,11 +16,20 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 chars'),
   JWT_EXPIRES_IN: z.string().default('7d'),
 
+  // Storage: "s3" (any S3-compatible endpoint) or "disk" (files on a local
+  // mount, served through the API's /api/blob routes — no S3 account needed).
+  STORAGE_DRIVER: z.enum(['s3', 'disk']).default('s3'),
+  STORAGE_DISK_PATH: z.string().default('./.storage'),
+  // The API's own externally-reachable base URL (used to build /api/blob URLs
+  // for the disk driver). Falls back to RENDER_EXTERNAL_URL, then localhost.
+  API_PUBLIC_URL: z.string().optional(),
+
+  // Only required when STORAGE_DRIVER=s3.
   S3_ENDPOINT: z.string().optional(),
   S3_REGION: z.string().default('us-east-1'),
-  S3_ACCESS_KEY_ID: z.string().min(1),
-  S3_SECRET_ACCESS_KEY: z.string().min(1),
-  S3_BUCKET: z.string().min(1),
+  S3_ACCESS_KEY_ID: z.string().default(''),
+  S3_SECRET_ACCESS_KEY: z.string().default(''),
+  S3_BUCKET: z.string().default(''),
   S3_FORCE_PATH_STYLE: z
     .enum(['true', 'false'])
     .default('true')
@@ -38,6 +47,14 @@ const envSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
+}).superRefine((v, ctx) => {
+  if (v.STORAGE_DRIVER === 's3') {
+    for (const key of ['S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY', 'S3_BUCKET'] as const) {
+      if (!v[key]) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: `${key} is required when STORAGE_DRIVER=s3` });
+      }
+    }
+  }
 });
 
 export type AppConfig = z.infer<typeof envSchema>;
