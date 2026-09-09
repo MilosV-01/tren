@@ -1,0 +1,181 @@
+// Tren — Prisma schema (Phase 1).
+// Enum string values mirror packages/shared/src/enums.ts exactly.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum OrganizationType {
+  individual
+  venue
+  photographer
+  planner
+}
+
+enum EventType {
+  wedding
+  birthday
+  corporate
+  other
+}
+
+enum EventVisibility {
+  public
+  pin_protected
+}
+
+enum PackageTier {
+  free
+  premium
+}
+
+enum MediaType {
+  photo
+  video
+}
+
+enum MediaStatus {
+  uploading
+  processing
+  ready
+  failed
+}
+
+enum ExportStatus {
+  pending
+  processing
+  ready
+  failed
+}
+
+// ---------------------------------------------------------------------------
+// Models
+// ---------------------------------------------------------------------------
+
+/// A billing/ownership boundary. For B2C this is one couple/celebrant; the
+/// `type` field is what the future partner (white-label) layer keys off of.
+model Organization {
+  id        String           @id @default(cuid())
+  name      String
+  type      OrganizationType @default(individual)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  users  User[]
+  events Event[]
+}
+
+/// An organizer login. Phase 1 = email + passwordHash. `magicLinkToken` /
+/// `magicLinkExpiresAt` are reserved so magic-link auth can be added later
+/// without a breaking migration.
+model User {
+  id                 String   @id @default(cuid())
+  organizationId     String
+  email              String   @unique
+  passwordHash       String?
+  magicLinkToken     String?  @unique
+  magicLinkExpiresAt DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+}
+
+model Event {
+  id             String          @id @default(cuid())
+  organizationId String
+  title          String
+  eventDate      DateTime
+  eventType      EventType
+  gallerySlug    String          @unique
+  visibility     EventVisibility @default(public)
+  /// bcrypt hash of the gallery PIN; null unless visibility = pin_protected.
+  pinHash        String?
+  /// Denormalized from packageTier at creation (Free = 7, Premium = 90).
+  retentionDays  Int
+  /// createdAt + retentionDays. The future CleanupService cron deletes media
+  /// for events whose expiresAt has passed. Recomputed if packageTier changes.
+  expiresAt      DateTime
+  packageTier    PackageTier     @default(free)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  guests       Guest[]
+  mediaItems   MediaItem[]
+  exports      GalleryExport[]
+
+  @@index([organizationId])
+  @@index([expiresAt])
+}
+
+/// A guest never authenticates. `sessionToken` (opaque, unique) is stored in the
+/// guest's browser localStorage and presented on every upload.
+model Guest {
+  id           String   @id @default(cuid())
+  eventId      String
+  displayName  String
+  sessionToken String   @unique
+  createdAt    DateTime @default(now())
+
+  event      Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  mediaItems MediaItem[]
+
+  @@index([eventId])
+}
+
+model MediaItem {
+  id           String      @id @default(cuid())
+  eventId      String
+  guestId      String
+  /// Object key inside the bucket (full asset).
+  storageKey   String
+  /// Object key of the generated thumbnail; null in Phase 1 (no thumb pipeline).
+  thumbnailKey String?
+  type         MediaType
+  status       MediaStatus @default(uploading)
+  filename     String
+  contentType  String
+  sizeBytes    Int
+  /// Reserved for the future AI-curation feature; never populated in Phase 1.
+  aiTags       Json?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  guest Guest @relation(fields: [guestId], references: [id], onDelete: Cascade)
+
+  @@index([eventId, status, createdAt])
+  @@index([guestId])
+}
+
+/// Async "download everything as ZIP" job. Phase 1 runs these in-process; the
+/// table + status machine mean swapping in a real queue (BullMQ) later is a
+/// drop-in change with no API surface change.
+model GalleryExport {
+  id          String       @id @default(cuid())
+  eventId     String
+  status      ExportStatus @default(pending)
+  progress    Int          @default(0)
+  /// Object key of the finished ZIP; null until status = ready.
+  storageKey  String?
+  fileCount   Int          @default(0)
+  error       String?
+  createdAt   DateTime     @default(now())
+  completedAt DateTime?
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId, createdAt])
+}
