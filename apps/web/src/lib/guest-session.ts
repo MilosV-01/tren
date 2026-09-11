@@ -9,6 +9,7 @@ import type { GuestSessionDto } from '@tren/shared';
  */
 const guestKey = (slug: string) => `tren:guest:${slug}`;
 const galleryKey = (slug: string) => `tren:gallery:${slug}`;
+const rollKey = (slug: string) => `tren:roll:${slug}`;
 
 export function getGuestSession(slug: string): GuestSessionDto | null {
   return read<GuestSessionDto>(guestKey(slug));
@@ -38,6 +39,18 @@ export function saveGalleryAccess(slug: string, token: string, expiresInSeconds:
 
 export function clearGalleryAccess(slug: string): void {
   safe(() => localStorage.removeItem(galleryKey(slug)));
+}
+
+/** Fun "film roll" shot counter for this guest on this device — cosmetic only,
+ *  never gates the real upload feature. */
+export function getRollCount(slug: string): number {
+  return read<number>(rollKey(slug)) ?? 0;
+}
+
+export function addRollCount(slug: string, by: number): number {
+  const next = getRollCount(slug) + by;
+  write(rollKey(slug), next);
+  return next;
 }
 
 function read<T>(key: string): T | null {

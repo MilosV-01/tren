@@ -17,6 +17,9 @@ export class GalleryService {
 
   async getPublicMeta(slug: string, req: Request): Promise<PublicEventDto> {
     const event = await this.events.findBySlugOrThrow(slug);
+    // Aggregate counts only (no media content) — safe to show before the PIN
+    // gate clears; powers the "developing…" moment on the guest gallery.
+    const stats = await this.events.statsFor(event.id);
     return {
       title: event.title,
       eventDate: event.eventDate.toISOString(),
@@ -25,6 +28,8 @@ export class GalleryService {
       visibility: event.visibility,
       unlocked: this.galleryAccess.canAccess(event, req),
       isExpired: this.events.isExpired(event),
+      guestCount: stats.guestCount,
+      mediaCount: stats.mediaCount,
     };
   }
 

@@ -24,7 +24,7 @@ export function DeleteEventButton({ eventId, title }: { eventId: string; title: 
   }
 
   return (
-    <button className="btn-ghost text-sm text-primary-700" onClick={onDelete} disabled={busy}>
+    <button className="btn-ghost text-sm text-danger-600" onClick={onDelete} disabled={busy}>
       {busy ? 'Brišem…' : 'Obriši događaj'}
     </button>
   );

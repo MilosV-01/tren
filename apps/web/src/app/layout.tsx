@@ -1,6 +1,20 @@
 import type { Metadata, Viewport } from 'next';
+import { Fraunces, Quicksand } from 'next/font/google';
 import { SITE_URL, BRAND } from '@/lib/config';
 import './globals.css';
+
+// Self-hosted at build time by next/font — no runtime dependency on Google's CDN.
+const serif = Fraunces({
+  subsets: ['latin', 'latin-ext'],
+  variable: '--font-serif',
+  display: 'swap',
+});
+const sans = Quicksand({
+  subsets: ['latin', 'latin-ext'],
+  variable: '--font-sans',
+  display: 'swap',
+  weight: ['400', '500', '600', '700'],
+});
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -49,7 +63,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#e11d48',
+  themeColor: '#1E1915',
   width: 'device-width',
   initialScale: 1,
   colorScheme: 'light',
@@ -57,8 +71,8 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="sr">
-      <body className="min-h-screen bg-surface-50">{children}</body>
+    <html lang="sr" className={`${serif.variable} ${sans.variable}`}>
+      <body className="min-h-screen bg-surface-50 font-sans">{children}</body>
     </html>
   );
 }

@@ -6,7 +6,7 @@ import { serverApi } from '@/lib/server-api';
 import { ApiError } from '@/lib/api-error';
 import { formatDate } from '@/lib/format';
 import { GuestUploader } from '@/components/guest-uploader';
-import { LogoMark } from '@/components/site/logo';
+import { Wordmark } from '@/components/site/logo';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,14 +40,13 @@ export default async function GuestUploadPage({ params }: { params: { slug: stri
   const event = await loadEvent(params.slug);
 
   return (
-    <main className="mx-auto min-h-screen max-w-md px-5 pb-16 pt-10">
-      <header className="mb-8 text-center">
-        <LogoMark className="mx-auto mb-4 h-10 w-10 text-surface-900" />
-        <p className="text-xs font-medium uppercase tracking-[0.18em] text-primary-600">
-          Zajednička galerija
-        </p>
-        <h1 className="mt-2 text-2xl font-semibold text-surface-900">{event.title}</h1>
-        <p className="mt-1 text-sm text-surface-500">{formatDate(event.eventDate)}</p>
+    <main className="mx-auto min-h-screen max-w-md px-5 pb-16 pt-8">
+      <header className="mb-8 flex items-center justify-between">
+        <Wordmark className="text-lg" />
+        <div className="text-right">
+          <p className="font-serif text-lg text-primary-900">{event.title}</p>
+          <p className="text-xs text-surface-500">{formatDate(event.eventDate)}</p>
+        </div>
       </header>
 
       <GuestUploader slug={event.gallerySlug} eventTitle={event.title} isExpired={event.isExpired} />
@@ -60,9 +59,6 @@ export default async function GuestUploadPage({ params }: { params: { slug: stri
           Pogledaj celu galeriju →
         </Link>
       </div>
-      <p className="mt-6 text-center text-xs text-surface-400">
-        Pokreće <span className="font-medium text-surface-500">Tren</span>
-      </p>
     </main>
   );
 }

@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation';
 import type { PublicEventDto } from '@tren/shared';
 import { serverApi } from '@/lib/server-api';
 import { ApiError } from '@/lib/api-error';
-import { GalleryView, GalleryHeader } from '@/components/gallery-view';
+import { GalleryView, GalleryHeader } from '@/components/site/gallery-view';
 
 export const dynamic = 'force-dynamic';
 

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { Logo } from './logo';
+import { Wordmark } from './logo';
 
 const NAV = [
   { href: '/#kako-radi', label: 'Kako radi' },
@@ -19,7 +19,7 @@ export function SiteHeader() {
     <header className="sticky top-0 z-40 border-b border-surface-200/70 bg-surface-50/80 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3.5">
         <Link href="/" aria-label="Tren — početna">
-          <Logo markClass="h-7 w-7" />
+          <Wordmark className="text-2xl" />
         </Link>
 
         <nav className="hidden items-center gap-7 md:flex">

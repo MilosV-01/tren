@@ -39,7 +39,7 @@ export function PinGate({ slug, onUnlocked }: { slug: string; onUnlocked: () => 
     <form onSubmit={onSubmit} className="card mx-auto max-w-sm space-y-4 text-center">
       <div className="text-3xl">🔒</div>
       <div>
-        <h2 className="font-semibold text-surface-900">Galerija je zaključana</h2>
+        <h2 className="font-serif text-xl text-primary-900">Galerija je zaključana</h2>
         <p className="mt-1 text-sm text-surface-600">Unesi PIN koji si dobio/la od organizatora.</p>
       </div>
       <input
@@ -51,8 +51,8 @@ export function PinGate({ slug, onUnlocked }: { slug: string; onUnlocked: () => 
         autoFocus
         required
       />
-      {error && <p className="text-sm text-primary-700">{error}</p>}
-      <button type="submit" className="btn-primary w-full" disabled={busy}>
+      {error && <p className="field-error">{error}</p>}
+      <button type="submit" className="btn-pill w-full" disabled={busy}>
         {busy ? 'Proveravam…' : 'Otključaj'}
       </button>
     </form>

@@ -172,7 +172,7 @@ export function CreateEventForm({ initialTier = 'free' }: { initialTier?: Packag
         )}
       </fieldset>
 
-      {formError && <p className="text-sm text-primary-700">{formError}</p>}
+      {formError && <p className="field-error">{formError}</p>}
 
       <div className="flex gap-3">
         <button type="submit" className="btn-primary" disabled={submitting}>

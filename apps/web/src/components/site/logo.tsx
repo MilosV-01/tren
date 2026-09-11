@@ -1,4 +1,4 @@
-/** Tren camera mark + wordmark. Mark inherits `currentColor`. */
+/** Tren camera mark (used for favicon/OG) + the elegant all-caps serif wordmark. */
 
 export function LogoMark({ className = 'h-7 w-7' }: { className?: string }) {
   return (
@@ -16,19 +16,24 @@ export function LogoMark({ className = 'h-7 w-7' }: { className?: string }) {
   );
 }
 
+/** The plain "TREN" wordmark used across headers — matches the film-camera brand look. */
+export function Wordmark({ className = 'text-xl' }: { className?: string }) {
+  return <span className={`wordmark ${className}`}>Tren</span>;
+}
+
 export function Logo({
   className = '',
   markClass = 'h-7 w-7',
-  textClass = 'text-lg font-semibold tracking-tight',
+  textClass = 'text-lg',
 }: {
   className?: string;
   markClass?: string;
   textClass?: string;
 }) {
   return (
-    <span className={`inline-flex items-center gap-2 text-surface-900 ${className}`}>
+    <span className={`inline-flex items-center gap-2 text-primary-900 ${className}`}>
       <LogoMark className={markClass} />
-      <span className={textClass}>Tren</span>
+      <Wordmark className={textClass} />
     </span>
   );
 }

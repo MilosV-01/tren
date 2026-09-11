@@ -83,4 +83,7 @@ export interface PublicEventDto {
   /** True once the caller has cleared the PIN gate (or the gallery is public). */
   unlocked: boolean;
   isExpired: boolean;
+  /** Aggregate counts only — never exposed alongside actual media until unlocked. */
+  guestCount: number;
+  mediaCount: number;
 }

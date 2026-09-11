@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ORGANIZATION_TYPES, type OrganizationType } from '@tren/shared';
-import { Logo } from '@/components/site/logo';
+import { Wordmark } from '@/components/site/logo';
 
 type Mode = 'login' | 'register';
 
@@ -68,8 +68,8 @@ export function AuthForm({
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-12">
-      <Link href="/" className="mb-8" aria-label="Tren — početna">
-        <Logo markClass="h-7 w-7" />
+      <Link href="/" className="mb-8 block" aria-label="Tren — početna">
+        <Wordmark className="text-2xl" />
       </Link>
       <h1 className="text-2xl font-semibold text-surface-900">
         {mode === 'register' ? 'Napravi nalog' : 'Prijava za organizatore'}
@@ -138,7 +138,7 @@ export function AuthForm({
           )}
         </div>
 
-        {error && <p className="text-sm text-primary-700">{error}</p>}
+        {error && <p className="field-error">{error}</p>}
 
         <button type="submit" className="btn-primary w-full" disabled={submitting}>
           {submitting ? 'Sačekaj…' : mode === 'register' ? 'Napravi nalog' : 'Prijavi se'}

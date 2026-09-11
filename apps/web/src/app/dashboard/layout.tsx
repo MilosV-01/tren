@@ -5,7 +5,7 @@ import type { AuthUserDto } from '@tren/shared';
 import { serverApi } from '@/lib/server-api';
 import { ApiError } from '@/lib/api-error';
 import { LogoutButton } from '@/components/logout-button';
-import { Logo } from '@/components/site/logo';
+import { Wordmark } from '@/components/site/logo';
 
 export const metadata: Metadata = {
   title: 'Dashboard',
@@ -28,7 +28,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <header className="border-b border-surface-200 bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
           <Link href="/dashboard" aria-label="Tren — dashboard">
-            <Logo markClass="h-6 w-6" />
+            <Wordmark className="text-xl" />
           </Link>
           <div className="flex items-center gap-4">
             <span className="hidden text-sm text-surface-500 sm:inline">{user.organizationName}</span>

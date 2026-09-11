@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { AUDIENCE, FAQ, FEATURES, HERO_EYEBROW, HOW_IT_WORKS, PRICING, STATS } from '@/lib/marketing';
 import { Icon } from './icons';
 import { LogoMark } from './logo';
+import { FilmFrame } from './film-frame';
 
 function Section({
   id,
@@ -23,9 +24,7 @@ function SectionHead({ eyebrow, title, lead }: { eyebrow: string; title: string;
   return (
     <div className="mx-auto max-w-2xl text-center">
       <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary-600">{eyebrow}</p>
-      <h2 className="mt-3 text-3xl font-semibold tracking-tight text-surface-900 sm:text-4xl">
-        {title}
-      </h2>
+      <h2 className="mt-3 font-serif text-3xl text-primary-900 sm:text-4xl">{title}</h2>
       {lead && <p className="mt-4 text-lg text-surface-600">{lead}</p>}
     </div>
   );
@@ -43,7 +42,7 @@ export function Hero() {
           <span className="inline-flex items-center gap-2 rounded-full border border-primary-200 bg-primary-50 px-3 py-1 text-xs font-semibold text-primary-700">
             {HERO_EYEBROW}
           </span>
-          <h1 className="mt-5 text-4xl font-semibold tracking-tight text-surface-900 sm:text-5xl lg:text-[3.4rem] lg:leading-[1.05]">
+          <h1 className="mt-5 font-serif text-4xl leading-[1.08] text-primary-900 sm:text-5xl lg:text-[3.4rem]">
             Sve fotografije sa vašeg događaja, na jednom mestu
           </h1>
           <p className="mt-5 max-w-xl text-lg text-surface-600">
@@ -64,16 +63,7 @@ export function Hero() {
         </div>
 
         <div className="relative mx-auto w-full max-w-lg lg:ml-auto">
-          <div className="overflow-hidden rounded-[28px] border border-white/60 bg-white shadow-2xl shadow-primary-200/50">
-            <img
-              src="/hero.jpg"
-              width={1400}
-              height={933}
-              alt="Gosti na venčanju dele fotografije"
-              className="aspect-[4/3] w-full object-cover"
-              fetchPriority="high"
-            />
-          </div>
+          <FilmFrame src="/hero.jpg" alt="Gosti na venčanju dele fotografije" priority />
 
           {/* floating live-gallery chip */}
           <div className="absolute -right-3 top-6 flex items-center gap-2 rounded-full bg-white/95 px-3.5 py-2 text-xs font-medium text-surface-800 shadow-lg backdrop-blur sm:-right-6">
@@ -110,7 +100,7 @@ export function Stats() {
       <div className="mx-auto grid max-w-6xl grid-cols-2 gap-6 px-5 py-10 sm:grid-cols-4">
         {STATS.map((s) => (
           <div key={s.label} className="text-center">
-            <div className="text-3xl font-semibold text-surface-900">{s.value}</div>
+            <div className="font-serif text-3xl text-primary-900">{s.value}</div>
             <div className="mt-1 text-sm text-surface-500">{s.label}</div>
           </div>
         ))}
@@ -206,7 +196,7 @@ export function Pricing() {
               )}
               <h3 className="text-lg font-semibold text-surface-900">{plan.name}</h3>
               <div className="mt-3 flex items-baseline gap-2">
-                <span className="text-3xl font-semibold text-surface-900">{plan.price}</span>
+                <span className="font-serif text-3xl text-primary-900">{plan.price}</span>
                 <span className="text-sm text-surface-500">{plan.priceNote}</span>
               </div>
               <ul className="mt-6 flex-1 space-y-3 text-sm">
@@ -239,7 +229,7 @@ export function Partners() {
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary-300">
             Za sale, fotografe i wedding planere
           </p>
-          <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
+          <h2 className="mt-3 font-serif text-3xl sm:text-4xl">
             Ponudi Tren svojim klijentima pod sopstvenim brendom
           </h2>
           <p className="mt-4 text-surface-300">
@@ -289,7 +279,7 @@ export function Faq() {
 export function FinalCta() {
   return (
     <Section className="text-center">
-      <h2 className="mx-auto max-w-2xl text-3xl font-semibold tracking-tight text-surface-900 sm:text-4xl">
+      <h2 className="mx-auto max-w-2xl font-serif text-3xl text-primary-900 sm:text-4xl">
         Sledeći događaj zaslužuje sve fotografije, ne samo one sa jednog telefona
       </h2>
       <div className="mt-8 flex flex-wrap justify-center gap-3">

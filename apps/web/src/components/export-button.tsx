@@ -79,7 +79,7 @@ export function ExportButton({
             : 'Preuzmi sve (ZIP)'}
       </button>
       {(error || job?.status === 'failed') && (
-        <span className="text-xs text-primary-700">
+        <span className="text-xs text-danger-600">
           {error ?? job?.error ?? 'Preuzimanje nije uspelo.'}
         </span>
       )}

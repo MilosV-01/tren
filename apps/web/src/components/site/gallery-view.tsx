@@ -6,11 +6,14 @@ import { publicApi } from '@/lib/browser-api';
 import { ApiError } from '@/lib/api-error';
 import { getGalleryAccess, clearGalleryAccess } from '@/lib/guest-session';
 import { formatDate, relativeFromNow } from '@/lib/format';
-import { PinGate } from './pin-gate';
-import { ExportButton } from './export-button';
+import { PinGate } from '../pin-gate';
+import { ExportButton } from '../export-button';
+import { Wordmark } from './logo';
 
 const PAGE_SIZE = 24;
-type Phase = 'checking' | 'locked' | 'ready' | 'error';
+const revealedKey = (slug: string) => `tren:revealed:${slug}`;
+
+type Phase = 'checking' | 'locked' | 'developing' | 'reveal' | 'ready' | 'error';
 
 export function GalleryView({ event }: { event: PublicEventDto }) {
   const slug = event.gallerySlug;
@@ -22,6 +25,14 @@ export function GalleryView({ event }: { event: PublicEventDto }) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<MediaItemDto | null>(null);
   const sentinel = useRef<HTMLDivElement>(null);
+
+  const alreadyRevealed = useCallback(() => {
+    try {
+      return localStorage.getItem(revealedKey(slug)) === '1';
+    } catch {
+      return true; // fail open — never trap a viewer behind the reveal screen
+    }
+  }, [slug]);
 
   const fetchPage = useCallback(
     async (token: string | undefined, next: string | null) => {
@@ -36,14 +47,14 @@ export function GalleryView({ event }: { event: PublicEventDto }) {
   );
 
   const loadFirst = useCallback(
-    async (token: string | undefined) => {
-      setPhase('checking');
+    async (token: string | undefined, skipDeveloping: boolean) => {
+      setPhase(skipDeveloping ? 'checking' : 'developing');
       try {
         const page = await fetchPage(token, null);
         setItems(page.items);
         setCursor(page.nextCursor);
         setAccess(token);
-        setPhase('ready');
+        setPhase(skipDeveloping ? 'ready' : 'reveal');
       } catch (err) {
         if (err instanceof ApiError && (err.status === 403 || err.status === 401)) {
           clearGalleryAccess(slug);
@@ -58,14 +69,15 @@ export function GalleryView({ event }: { event: PublicEventDto }) {
   );
 
   useEffect(() => {
+    const skipDeveloping = alreadyRevealed();
     if (event.visibility === 'public') {
-      void loadFirst(undefined);
+      void loadFirst(undefined, skipDeveloping);
     } else {
       const token = getGalleryAccess(slug);
-      if (token) void loadFirst(token);
+      if (token) void loadFirst(token, skipDeveloping);
       else setPhase('locked');
     }
-  }, [event.visibility, slug, loadFirst]);
+  }, [event.visibility, slug, loadFirst, alreadyRevealed]);
 
   const loadMore = useCallback(async () => {
     if (!cursor || loadingMore) return;
@@ -94,21 +106,66 @@ export function GalleryView({ event }: { event: PublicEventDto }) {
     return () => obs.disconnect();
   }, [phase, loadMore]);
 
+  function reveal() {
+    try {
+      localStorage.setItem(revealedKey(slug), '1');
+    } catch {
+      /* best-effort */
+    }
+    setPhase('ready');
+  }
+
   if (phase === 'checking') {
     return <p className="py-16 text-center text-sm text-surface-500">Učitavanje…</p>;
   }
 
   if (phase === 'locked') {
-    return <PinGate slug={slug} onUnlocked={() => loadFirst(getGalleryAccess(slug) ?? undefined)} />;
+    return (
+      <PinGate
+        slug={slug}
+        onUnlocked={() => loadFirst(getGalleryAccess(slug) ?? undefined, alreadyRevealed())}
+      />
+    );
   }
 
   if (phase === 'error') {
-    return <p className="py-16 text-center text-sm text-primary-700">{errorMsg}</p>;
+    return <p className="py-16 text-center text-sm text-danger-600">{errorMsg}</p>;
+  }
+
+  if (phase === 'developing') {
+    return (
+      <div className="flex flex-col items-center gap-6 py-10 text-center">
+        <p className="wordmark text-2xl">Razvijanje…</p>
+        <div className="space-y-1 font-serif text-lg text-primary-900">
+          <p>{event.title}</p>
+          <p className="text-base text-surface-600">{event.guestCount} gostiju</p>
+          <p className="text-base text-surface-600">{event.mediaCount} trenutka</p>
+        </div>
+        <span className="h-8 w-8 animate-spin rounded-full border-2 border-surface-300 border-t-primary-800" />
+        <p className="font-serif italic text-surface-600">Vaš film se razvija.</p>
+      </div>
+    );
+  }
+
+  if (phase === 'reveal') {
+    return (
+      <div className="flex flex-col items-center gap-6 py-10 text-center">
+        <p className="text-lg text-primary-900">Vaš film je razvijen</p>
+        <div className="space-y-1 font-serif text-lg text-primary-900">
+          <p>{event.title}</p>
+          <p className="text-base text-surface-600">{event.guestCount} gostiju</p>
+          <p className="text-base text-surface-600">{event.mediaCount} trenutka</p>
+        </div>
+        <button className="btn-pill" onClick={reveal}>
+          Pogledaj film
+        </button>
+      </div>
+    );
   }
 
   return (
-    <div>
-      <div className="mb-4 flex items-center justify-between gap-3">
+    <div className="mx-auto max-w-md">
+      <div className="mb-6 flex items-center justify-between gap-3">
         <p className="text-sm text-surface-600">
           {items.length}
           {cursor ? '+' : ''} {items.length === 1 ? 'stavka' : 'stavki'}
@@ -123,19 +180,23 @@ export function GalleryView({ event }: { event: PublicEventDto }) {
             : 'Još nema fotografija. Budi prvi/a!'}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-          {items.map((item) => (
-            <MediaTile key={item.id} item={item} onOpen={() => setLightbox(item)} />
+        <div className="space-y-8">
+          {items.map((item, i) => (
+            <ReelFrame
+              key={item.id}
+              item={item}
+              index={i}
+              total={Math.max(event.mediaCount, items.length)}
+              onOpen={() => setLightbox(item)}
+            />
           ))}
         </div>
       )}
 
       <div ref={sentinel} className="h-8" />
-      {loadingMore && (
-        <p className="py-4 text-center text-xs text-surface-400">Učitavam još…</p>
-      )}
+      {loadingMore && <p className="py-4 text-center text-xs text-surface-400">Učitavam još…</p>}
       {!cursor && items.length > PAGE_SIZE && (
-        <p className="py-4 text-center text-xs text-surface-400">To je sve 🎉</p>
+        <p className="py-4 text-center text-xs text-surface-400">To je ceo film 🎞️</p>
       )}
 
       {lightbox && <Lightbox item={lightbox} onClose={() => setLightbox(null)} />}
@@ -143,31 +204,37 @@ export function GalleryView({ event }: { event: PublicEventDto }) {
   );
 }
 
-function MediaTile({ item, onOpen }: { item: MediaItemDto; onOpen: () => void }) {
-  if (item.type === 'video') {
-    return (
-      <video
-        src={item.url}
-        className="aspect-square w-full rounded-lg bg-surface-100 object-cover"
-        controls
-        preload="metadata"
-        playsInline
-      />
-    );
-  }
+function ReelFrame({
+  item,
+  index,
+  total,
+  onOpen,
+}: {
+  item: MediaItemDto;
+  index: number;
+  total: number;
+  onOpen: () => void;
+}) {
+  const num = String(index + 1).padStart(String(total).length, '0');
   return (
-    <button
-      onClick={onOpen}
-      className="group relative aspect-square overflow-hidden rounded-lg bg-surface-100"
-      aria-label={`Fotografija — ${item.guestName}`}
-    >
-      <img
-        src={item.thumbnailUrl}
-        loading="lazy"
-        alt=""
-        className="h-full w-full object-cover transition-transform group-hover:scale-105"
-      />
-    </button>
+    <div>
+      <p className="mb-2 font-mono text-xs tracking-wide text-surface-400">
+        {num}/{total}
+      </p>
+      {item.type === 'video' ? (
+        <video
+          src={item.url}
+          className="w-full rounded-xl bg-surface-100 object-cover"
+          controls
+          preload="metadata"
+          playsInline
+        />
+      ) : (
+        <button onClick={onOpen} className="block w-full" aria-label={`Fotografija — ${item.guestName}`}>
+          <img src={item.thumbnailUrl} loading="lazy" alt="" className="w-full rounded-xl object-cover" />
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -180,7 +247,7 @@ function Lightbox({ item, onClose }: { item: MediaItemDto; onClose: () => void }
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 p-4"
+      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-primary-950/95 p-4"
       onClick={onClose}
     >
       <img
@@ -189,7 +256,7 @@ function Lightbox({ item, onClose }: { item: MediaItemDto; onClose: () => void }
         className="max-h-[85vh] max-w-full rounded-lg object-contain"
         onClick={(e) => e.stopPropagation()}
       />
-      <p className="mt-3 text-center text-sm text-white/80">
+      <p className="mt-3 text-center text-sm text-surface-50/80">
         {item.guestName} · {relativeFromNow(item.createdAt)}
       </p>
     </div>
@@ -198,11 +265,10 @@ function Lightbox({ item, onClose }: { item: MediaItemDto; onClose: () => void }
 
 export function GalleryHeader({ event }: { event: PublicEventDto }) {
   return (
-    <header className="mb-6 text-center">
-      <h1 className="text-2xl font-semibold text-surface-900">{event.title}</h1>
-      <p className="mt-1 text-sm text-surface-500">
-        {formatDate(event.eventDate)} · galerija
-      </p>
+    <header className="mb-8 text-center">
+      <Wordmark className="text-lg" />
+      <p className="mt-4 text-sm text-surface-500">{formatDate(event.eventDate)}</p>
+      <h1 className="mt-1 font-serif text-3xl text-primary-900">{event.title}</h1>
     </header>
   );
 }
