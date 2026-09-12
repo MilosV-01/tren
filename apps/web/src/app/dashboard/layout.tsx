@@ -12,6 +12,10 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+// Give the API's free-tier cold start (it sleeps after 15 min idle) room to
+// wake up within a single request instead of the platform cutting it short.
+export const maxDuration = 60;
+
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   let user: AuthUserDto;
   try {
@@ -20,7 +24,21 @@ export default async function DashboardLayout({ children }: { children: React.Re
     if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
       redirect('/login?next=/dashboard');
     }
-    throw err;
+    // Anything else (network hiccup, API still waking up from sleep, etc.) —
+    // show a friendly retry instead of crashing the whole dashboard, navbar
+    // included, into the generic error page.
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
+        <Wordmark className="text-xl" />
+        <p className="max-w-sm text-sm text-surface-600">
+          Trenutno ne možemo da se povežemo sa serverom. Ako se ovo desilo posle duže pauze, server se
+          verovatno budi — probaj ponovo za par sekundi.
+        </p>
+        <a href="/dashboard" className="btn-primary text-sm">
+          Pokušaj ponovo
+        </a>
+      </div>
+    );
   }
 
   return (
