@@ -6,6 +6,8 @@ import { ApiError } from '@/lib/api-error';
 import { formatDate, formatDateTime, eventTypeLabel, relativeFromNow } from '@/lib/format';
 import { QrShareCard } from '@/components/qr-share-card';
 import { DeleteEventButton } from '@/components/delete-event-button';
+import { OwnerFeed } from '@/components/owner-feed';
+import { OrganizerExportButton } from '@/components/organizer-export-button';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,7 +38,7 @@ export default async function EventDetailPage({ params }: { params: { id: string
           </div>
           <div className="flex gap-2">
             <Link href={`/e/${event.gallerySlug}/gallery`} className="btn-secondary text-sm">
-              Otvori galeriju
+              Pregled kao gost
             </Link>
             <Link href={`/e/${event.gallerySlug}`} className="btn-primary text-sm">
               Stranica za goste
@@ -65,6 +67,14 @@ export default async function EventDetailPage({ params }: { params: { id: string
         <Row label="Poslednji upload">
           {event.stats.lastUploadAt ? relativeFromNow(event.stats.lastUploadAt) : 'još ništa'}
         </Row>
+      </div>
+
+      <div>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="font-serif text-lg text-primary-900">Sve fotografije</h2>
+          <OrganizerExportButton eventId={event.id} disabled={event.stats.mediaCount === 0} />
+        </div>
+        <OwnerFeed eventId={event.id} />
       </div>
 
       <div className="flex justify-end">

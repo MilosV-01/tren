@@ -2,12 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { joinEventSchema, type GuestSessionDto, type UploadTicketDto } from '@tren/shared';
+import { type GuestSessionDto, type UploadTicketDto } from '@tren/shared';
 import { publicApi } from '@/lib/browser-api';
 import { ApiError } from '@/lib/api-error';
 import {
   getGuestSession,
-  saveGuestSession,
   clearGuestSession,
   getRollCount,
   addRollCount,
@@ -16,6 +15,7 @@ import { putWithProgress, resolveContentType } from '@/lib/xhr-upload';
 import { FilmFrame } from '@/components/site/film-frame';
 import { FlipCounter } from '@/components/site/flip-counter';
 import { ShutterButton } from '@/components/site/shutter-button';
+import { NameForm } from '@/components/site/name-form';
 
 /** Size of the fun "film roll" — purely cosmetic, never actually blocks sending. */
 const ROLL_SIZE = 36;
@@ -38,33 +38,89 @@ interface UploadItem {
   error?: string;
 }
 
+/** A small tileable noise texture, generated once and reused as a canvas
+ *  pattern for the grain pass below — cheap grain without a per-pixel loop
+ *  on every photo. */
+let grainPatternCache: CanvasPattern | null | undefined;
+function grainPattern(ctx: CanvasRenderingContext2D): CanvasPattern | null {
+  if (grainPatternCache !== undefined) return grainPatternCache;
+  try {
+    const size = 64;
+    const tile = document.createElement('canvas');
+    tile.width = size;
+    tile.height = size;
+    const tctx = tile.getContext('2d');
+    if (!tctx) return (grainPatternCache = null);
+    const img = tctx.createImageData(size, size);
+    for (let i = 0; i < img.data.length; i += 4) {
+      const v = Math.floor(Math.random() * 255);
+      img.data[i] = v;
+      img.data[i + 1] = v;
+      img.data[i + 2] = v;
+      img.data[i + 3] = 255;
+    }
+    tctx.putImageData(img, 0, 0);
+    return (grainPatternCache = ctx.createPattern(tile, 'repeat'));
+  } catch {
+    return (grainPatternCache = null);
+  }
+}
+
 /**
- * Bakes a subtle "cinematic" color grade (lifted shadows, warm/teal tint, a touch
- * more contrast) into a photo before it's sent — the whole point of the disposable-
- * camera bit is that every shot already looks like it belongs to the same roll.
- * Purely cosmetic: any failure (unsupported browser, odd file) just falls back to
- * the original file so a filter glitch can never block sending.
+ * Bakes a retro, Retrica-style grade into a photo before it's sent: warm and
+ * punchy with faded-plastic-lens vignetting and a touch of film grain — every
+ * shot on the roll ends up looking like it belongs together. Purely cosmetic:
+ * any failure (unsupported browser, odd file) falls back to the original file
+ * so a filter glitch can never block sending.
  */
-async function applyCinematicFilter(file: File): Promise<File> {
+async function applyRetroFilter(file: File): Promise<File> {
   if (!file.type.startsWith('image/')) return file;
   try {
     const bitmap = await createImageBitmap(file);
     const canvas = document.createElement('canvas');
-    canvas.width = bitmap.width;
-    canvas.height = bitmap.height;
+    const w = (canvas.width = bitmap.width);
+    const h = (canvas.height = bitmap.height);
     const ctx = canvas.getContext('2d');
     if (!ctx) return file;
 
-    ctx.filter = 'contrast(1.12) saturate(1.15) brightness(0.97) sepia(0.1)';
+    // Warm, punchy base grade.
+    ctx.filter = 'contrast(1.15) saturate(1.35) brightness(1.03) sepia(0.22) hue-rotate(-8deg)';
     ctx.drawImage(bitmap, 0, 0);
-    // Faint teal-shadow / warm-highlight tint on top of the base grade.
+    ctx.filter = 'none';
+
+    // Warm highlight tint.
     ctx.globalCompositeOperation = 'overlay';
-    ctx.fillStyle = 'rgba(12, 38, 46, 0.1)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = 'rgba(255, 178, 102, 0.12)';
+    ctx.fillRect(0, 0, w, h);
+
+    // Toy-lens vignette — darker, slightly warm corners.
     ctx.globalCompositeOperation = 'source-over';
+    const vignette = ctx.createRadialGradient(
+      w / 2,
+      h / 2,
+      Math.min(w, h) * 0.35,
+      w / 2,
+      h / 2,
+      Math.hypot(w, h) / 1.5,
+    );
+    vignette.addColorStop(0, 'rgba(0,0,0,0)');
+    vignette.addColorStop(1, 'rgba(20,12,8,0.38)');
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, w, h);
+
+    // Faint grain.
+    const grain = grainPattern(ctx);
+    if (grain) {
+      ctx.globalAlpha = 0.05;
+      ctx.globalCompositeOperation = 'overlay';
+      ctx.fillStyle = grain;
+      ctx.fillRect(0, 0, w, h);
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
+    }
 
     const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, 'image/jpeg', 0.92),
+      canvas.toBlob(resolve, 'image/jpeg', 0.9),
     );
     if (!blob) return file;
     const name = file.name.replace(/\.\w+$/, '.jpg') || `foto-${Date.now()}.jpg`;
@@ -106,7 +162,7 @@ export function GuestUploader({
   }
 
   if (!session) {
-    return <NameForm slug={slug} onJoined={setSession} />;
+    return <NameForm slug={slug} onJoined={setSession} submitLabel="Uđi u kameru" />;
   }
 
   return (
@@ -119,67 +175,6 @@ export function GuestUploader({
         setSession(null);
       }}
     />
-  );
-}
-
-function NameForm({
-  slug,
-  onJoined,
-}: {
-  slug: string;
-  onJoined: (s: GuestSessionDto) => void;
-}) {
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setError(null);
-    const displayName = String(new FormData(e.currentTarget).get('displayName') ?? '').trim();
-
-    const parsed = joinEventSchema.safeParse({ displayName });
-    if (!parsed.success) {
-      setError(parsed.error.issues[0].message);
-      return;
-    }
-
-    setBusy(true);
-    try {
-      const dto = await publicApi<GuestSessionDto>(`/public/events/${slug}/guests`, {
-        method: 'POST',
-        body: JSON.stringify(parsed.data),
-      });
-      saveGuestSession(slug, dto);
-      onJoined(dto);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Greška. Pokušaj ponovo.');
-      setBusy(false);
-    }
-  }
-
-  return (
-    <form onSubmit={onSubmit} className="card space-y-4">
-      <div>
-        <label className="label font-serif text-base text-primary-900" htmlFor="displayName">
-          Kako se zoveš?
-        </label>
-        <input
-          id="displayName"
-          name="displayName"
-          className="input mt-2"
-          placeholder="npr. Jelena"
-          autoComplete="name"
-          required
-        />
-        <p className="mt-2 text-xs text-surface-500">
-          Ime se pamti na ovom telefonu — ne moraš da ga unosiš ponovo.
-        </p>
-      </div>
-      {error && <p className="field-error">{error}</p>}
-      <button type="submit" className="btn-primary w-full" disabled={busy}>
-        {busy ? 'Sačekaj…' : 'Uđi u kameru'}
-      </button>
-    </form>
   );
 }
 
@@ -280,7 +275,7 @@ function Camera({
     setSending(true);
     let ok = 0;
     for (const original of raw) {
-      const file = await applyCinematicFilter(original);
+      const file = await applyRetroFilter(original);
       const item: UploadItem = {
         id: `${original.name}-${original.size}-${original.lastModified}-${Math.random().toString(36).slice(2)}`,
         file,

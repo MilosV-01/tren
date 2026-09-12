@@ -1,30 +1,38 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { MediaItemDto, Paginated, PublicEventDto } from '@tren/shared';
+import type { GuestSessionDto, MediaItemDto, Paginated, PublicEventDto } from '@tren/shared';
 import { publicApi } from '@/lib/browser-api';
 import { ApiError } from '@/lib/api-error';
-import { getGalleryAccess, clearGalleryAccess } from '@/lib/guest-session';
-import { formatDate, relativeFromNow } from '@/lib/format';
+import { getGalleryAccess, clearGalleryAccess, getGuestSession, clearGuestSession } from '@/lib/guest-session';
+import { formatDate } from '@/lib/format';
 import { PinGate } from '../pin-gate';
-import { ExportButton } from '../export-button';
+import { NameForm } from './name-form';
+import { FeedPost, FeedLightbox } from './feed-post';
 import { Wordmark } from './logo';
 
 const PAGE_SIZE = 24;
 const revealedKey = (slug: string) => `tren:revealed:${slug}`;
 
-type Phase = 'checking' | 'locked' | 'developing' | 'reveal' | 'ready' | 'error';
+type Phase = 'checking' | 'locked' | 'join' | 'developing' | 'reveal' | 'ready' | 'error';
 
 export function GalleryView({ event }: { event: PublicEventDto }) {
   const slug = event.gallerySlug;
   const [phase, setPhase] = useState<Phase>('checking');
   const [access, setAccess] = useState<string | undefined>(undefined);
+  const [guestToken, setGuestToken] = useState<string | undefined>(undefined);
   const [items, setItems] = useState<MediaItemDto[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<MediaItemDto | null>(null);
   const sentinel = useRef<HTMLDivElement>(null);
+  // Held while we wait for the guest to give their name, so we can resume
+  // exactly the load that triggered the join screen.
+  const pending = useRef<{ access: string | undefined; skipDeveloping: boolean }>({
+    access: undefined,
+    skipDeveloping: true,
+  });
 
   const alreadyRevealed = useCallback(() => {
     try {
@@ -35,55 +43,76 @@ export function GalleryView({ event }: { event: PublicEventDto }) {
   }, [slug]);
 
   const fetchPage = useCallback(
-    async (token: string | undefined, next: string | null) => {
+    async (accessToken: string | undefined, guest: string, next: string | null) => {
       const qs = new URLSearchParams({ limit: String(PAGE_SIZE) });
       if (next) qs.set('cursor', next);
       return publicApi<Paginated<MediaItemDto>>(
         `/public/events/${slug}/media?${qs.toString()}`,
-        { galleryAccess: token },
+        { galleryAccess: accessToken, guestSession: guest },
       );
     },
     [slug],
   );
 
   const loadFirst = useCallback(
-    async (token: string | undefined, skipDeveloping: boolean) => {
+    async (accessToken: string | undefined, guest: string, skipDeveloping: boolean) => {
       setPhase(skipDeveloping ? 'checking' : 'developing');
       try {
-        const page = await fetchPage(token, null);
+        const page = await fetchPage(accessToken, guest, null);
         setItems(page.items);
         setCursor(page.nextCursor);
-        setAccess(token);
+        setAccess(accessToken);
+        setGuestToken(guest);
         setPhase(skipDeveloping ? 'ready' : 'reveal');
       } catch (err) {
         if (err instanceof ApiError && (err.status === 403 || err.status === 401)) {
           clearGalleryAccess(slug);
-          setPhase('locked');
+          clearGuestSession(slug);
+          setPhase(event.visibility === 'pin_protected' ? 'locked' : 'join');
           return;
         }
         setErrorMsg(err instanceof ApiError ? err.message : 'Galerija se ne učitava.');
         setPhase('error');
       }
     },
-    [fetchPage, slug],
+    [fetchPage, slug, event.visibility],
+  );
+
+  /** Loads the guest's session (joining if needed) then continues to `loadFirst`. */
+  const proceed = useCallback(
+    (accessToken: string | undefined, skipDeveloping: boolean) => {
+      const session = getGuestSession(slug);
+      if (!session) {
+        pending.current = { access: accessToken, skipDeveloping };
+        setPhase('join');
+        return;
+      }
+      void loadFirst(accessToken, session.sessionToken, skipDeveloping);
+    },
+    [slug, loadFirst],
   );
 
   useEffect(() => {
     const skipDeveloping = alreadyRevealed();
     if (event.visibility === 'public') {
-      void loadFirst(undefined, skipDeveloping);
+      proceed(undefined, skipDeveloping);
     } else {
       const token = getGalleryAccess(slug);
-      if (token) void loadFirst(token, skipDeveloping);
+      if (token) proceed(token, skipDeveloping);
       else setPhase('locked');
     }
-  }, [event.visibility, slug, loadFirst, alreadyRevealed]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event.visibility, slug]);
+
+  function onJoined(session: GuestSessionDto) {
+    void loadFirst(pending.current.access, session.sessionToken, pending.current.skipDeveloping);
+  }
 
   const loadMore = useCallback(async () => {
-    if (!cursor || loadingMore) return;
+    if (!cursor || loadingMore || !guestToken) return;
     setLoadingMore(true);
     try {
-      const page = await fetchPage(access, cursor);
+      const page = await fetchPage(access, guestToken, cursor);
       setItems((prev) => [...prev, ...page.items]);
       setCursor(page.nextCursor);
     } catch {
@@ -91,7 +120,7 @@ export function GalleryView({ event }: { event: PublicEventDto }) {
     } finally {
       setLoadingMore(false);
     }
-  }, [cursor, loadingMore, access, fetchPage]);
+  }, [cursor, loadingMore, access, guestToken, fetchPage]);
 
   useEffect(() => {
     const node = sentinel.current;
@@ -123,7 +152,19 @@ export function GalleryView({ event }: { event: PublicEventDto }) {
     return (
       <PinGate
         slug={slug}
-        onUnlocked={() => loadFirst(getGalleryAccess(slug) ?? undefined, alreadyRevealed())}
+        onUnlocked={() => proceed(getGalleryAccess(slug) ?? undefined, alreadyRevealed())}
+      />
+    );
+  }
+
+  if (phase === 'join') {
+    return (
+      <NameForm
+        slug={slug}
+        onJoined={onJoined}
+        heading="Kako se zoveš?"
+        hint="Vidiš samo fotografije koje si ti okinuo/la — ime nam treba da znamo koje su tvoje."
+        submitLabel="Pogledaj svoje fotografije"
       />
     );
   }
@@ -165,30 +206,21 @@ export function GalleryView({ event }: { event: PublicEventDto }) {
 
   return (
     <div className="mx-auto max-w-md">
-      <div className="mb-6 flex items-center justify-between gap-3">
-        <p className="text-sm text-surface-600">
-          {items.length}
-          {cursor ? '+' : ''} {items.length === 1 ? 'stavka' : 'stavki'}
-        </p>
-        <ExportButton slug={slug} galleryAccess={access} disabled={items.length === 0} />
-      </div>
+      <p className="mb-4 text-sm text-surface-600">
+        Tvoje fotografije ({items.length}
+        {cursor ? '+' : ''})
+      </p>
 
       {items.length === 0 ? (
         <div className="card py-16 text-center text-sm text-surface-600">
           {event.isExpired
             ? 'Ovaj događaj je istekao i galerija je ispražnjena.'
-            : 'Još nema fotografija. Budi prvi/a!'}
+            : 'Još nisi okinuo/la nijednu fotografiju — vrati se na kameru i uslikaj prvu!'}
         </div>
       ) : (
-        <div className="space-y-8">
-          {items.map((item, i) => (
-            <ReelFrame
-              key={item.id}
-              item={item}
-              index={i}
-              total={Math.max(event.mediaCount, items.length)}
-              onOpen={() => setLightbox(item)}
-            />
+        <div className="divide-y divide-surface-200">
+          {items.map((item) => (
+            <FeedPost key={item.id} item={item} onOpen={() => setLightbox(item)} />
           ))}
         </div>
       )}
@@ -196,69 +228,10 @@ export function GalleryView({ event }: { event: PublicEventDto }) {
       <div ref={sentinel} className="h-8" />
       {loadingMore && <p className="py-4 text-center text-xs text-surface-400">Učitavam još…</p>}
       {!cursor && items.length > PAGE_SIZE && (
-        <p className="py-4 text-center text-xs text-surface-400">To je ceo film 🎞️</p>
+        <p className="py-4 text-center text-xs text-surface-400">To je sve za sada 🎞️</p>
       )}
 
-      {lightbox && <Lightbox item={lightbox} onClose={() => setLightbox(null)} />}
-    </div>
-  );
-}
-
-function ReelFrame({
-  item,
-  index,
-  total,
-  onOpen,
-}: {
-  item: MediaItemDto;
-  index: number;
-  total: number;
-  onOpen: () => void;
-}) {
-  const num = String(index + 1).padStart(String(total).length, '0');
-  return (
-    <div>
-      <p className="mb-2 font-mono text-xs tracking-wide text-surface-400">
-        {num}/{total}
-      </p>
-      {item.type === 'video' ? (
-        <video
-          src={item.url}
-          className="w-full rounded-xl bg-surface-100 object-cover"
-          controls
-          preload="metadata"
-          playsInline
-        />
-      ) : (
-        <button onClick={onOpen} className="block w-full" aria-label={`Fotografija — ${item.guestName}`}>
-          <img src={item.thumbnailUrl} loading="lazy" alt="" className="w-full rounded-xl object-cover" />
-        </button>
-      )}
-    </div>
-  );
-}
-
-function Lightbox({ item, onClose }: { item: MediaItemDto; onClose: () => void }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-primary-950/95 p-4"
-      onClick={onClose}
-    >
-      <img
-        src={item.url}
-        alt=""
-        className="max-h-[85vh] max-w-full rounded-lg object-contain"
-        onClick={(e) => e.stopPropagation()}
-      />
-      <p className="mt-3 text-center text-sm text-surface-50/80">
-        {item.guestName} · {relativeFromNow(item.createdAt)}
-      </p>
+      {lightbox && <FeedLightbox item={lightbox} onClose={() => setLightbox(null)} />}
     </div>
   );
 }

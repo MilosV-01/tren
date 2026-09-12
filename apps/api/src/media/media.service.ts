@@ -133,7 +133,11 @@ export class MediaService {
     return this.toDto(ready, guest.displayName);
   }
 
-  /** Chronological gallery, newest first, cursor-paginated. */
+  /**
+   * A guest's own feed, newest first, cursor-paginated. Guests only ever see
+   * what they personally captured — the shared, everyone-sees-everything view
+   * is now organizer-only (see `listForOrganizer`).
+   */
   async listGallery(
     slug: string,
     req: Request,
@@ -142,9 +146,34 @@ export class MediaService {
     const { cursor, limit } = paginationQuerySchema.parse(rawQuery);
     const event = await this.events.findBySlugOrThrow(slug);
     this.galleryAccess.assertCanAccess(event, req);
+    const guest = await this.guests.requireGuest(event.id, req);
 
     const rows = await this.prisma.mediaItem.findMany({
-      where: { eventId: event.id, status: 'ready' },
+      where: { eventId: event.id, status: 'ready', guestId: guest.id },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      include: { guest: true },
+    });
+
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const items = await Promise.all(page.map((m) => this.toDto(m, m.guest.displayName)));
+
+    return { items, nextCursor: hasMore ? page[page.length - 1].id : null };
+  }
+
+  /** The full event feed (every guest's photos) — organizer-only. */
+  async listForOrganizer(
+    organizationId: string,
+    eventId: string,
+    rawQuery: unknown,
+  ): Promise<Paginated<MediaItemDto>> {
+    const { cursor, limit } = paginationQuerySchema.parse(rawQuery);
+    await this.events.requireOwnedEvent(organizationId, eventId);
+
+    const rows = await this.prisma.mediaItem.findMany({
+      where: { eventId, status: 'ready' },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: limit + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
