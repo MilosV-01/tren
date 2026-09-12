@@ -1,4 +1,4 @@
-﻿-- CreateEnum
+-- CreateEnum
 CREATE TYPE "OrganizationType" AS ENUM ('individual', 'venue', 'photographer', 'planner');
 
 -- CreateEnum
