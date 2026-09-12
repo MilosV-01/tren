@@ -20,6 +20,15 @@ import { ShutterButton } from '@/components/site/shutter-button';
 /** Size of the fun "film roll" — purely cosmetic, never actually blocks sending. */
 const ROLL_SIZE = 36;
 
+/** Serbian noun agreement for "fotografija" (1 → fotografija, 2–4 → fotografije, 5+/0 → fotografija). */
+function photoWord(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'fotografija';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'fotografije';
+  return 'fotografija';
+}
+
 type ItemStatus = 'pending' | 'uploading' | 'done' | 'error';
 interface UploadItem {
   id: string;
@@ -27,6 +36,42 @@ interface UploadItem {
   status: ItemStatus;
   progress: number;
   error?: string;
+}
+
+/**
+ * Bakes a subtle "cinematic" color grade (lifted shadows, warm/teal tint, a touch
+ * more contrast) into a photo before it's sent — the whole point of the disposable-
+ * camera bit is that every shot already looks like it belongs to the same roll.
+ * Purely cosmetic: any failure (unsupported browser, odd file) just falls back to
+ * the original file so a filter glitch can never block sending.
+ */
+async function applyCinematicFilter(file: File): Promise<File> {
+  if (!file.type.startsWith('image/')) return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return file;
+
+    ctx.filter = 'contrast(1.12) saturate(1.15) brightness(0.97) sepia(0.1)';
+    ctx.drawImage(bitmap, 0, 0);
+    // Faint teal-shadow / warm-highlight tint on top of the base grade.
+    ctx.globalCompositeOperation = 'overlay';
+    ctx.fillStyle = 'rgba(12, 38, 46, 0.1)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.globalCompositeOperation = 'source-over';
+
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, 'image/jpeg', 0.92),
+    );
+    if (!blob) return file;
+    const name = file.name.replace(/\.\w+$/, '.jpg') || `foto-${Date.now()}.jpg`;
+    return new File([blob], name, { type: 'image/jpeg', lastModified: Date.now() });
+  } catch {
+    return file;
+  }
 }
 
 export function GuestUploader({
@@ -155,7 +200,8 @@ function Camera({
   const [continued, setContinued] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [flash, setFlash] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
   const previewRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -175,22 +221,6 @@ function Camera({
     previewRef.current = url;
     setPreviewUrl(url);
   }, []);
-
-  const addFiles = useCallback(
-    (files: FileList | null) => {
-      if (!files || files.length === 0) return;
-      const list = Array.from(files);
-      const next: UploadItem[] = list.map((file) => ({
-        id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2)}`,
-        file,
-        status: 'pending',
-        progress: 0,
-      }));
-      setItems((prev) => [...prev, ...next]);
-      setPreview(list[0]);
-    },
-    [setPreview],
-  );
 
   function patch(id: string, changes: Partial<UploadItem>) {
     setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...changes } : it)));
@@ -239,11 +269,25 @@ function Camera({
     }
   }
 
-  async function sendAll() {
+  /** Runs the cinematic grade on each new photo, then sends it right away —
+   *  no separate "send" step between the shutter and the guest's photo landing
+   *  in the event's roll. */
+  async function addFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const raw = Array.from(files);
+    setPreview(raw[0]);
+
     setSending(true);
     let ok = 0;
-    for (const item of items) {
-      if (item.status === 'done') continue;
+    for (const original of raw) {
+      const file = await applyCinematicFilter(original);
+      const item: UploadItem = {
+        id: `${original.name}-${original.size}-${original.lastModified}-${Math.random().toString(36).slice(2)}`,
+        file,
+        status: 'pending',
+        progress: 0,
+      };
+      setItems((prev) => [...prev, item]);
       if (await uploadOne(item)) ok += 1;
     }
     if (ok > 0) {
@@ -252,12 +296,30 @@ function Camera({
       setTimeout(() => setFlash(false), 1700);
     }
     setSending(false);
-    if (inputRef.current) inputRef.current.value = '';
+    if (cameraInputRef.current) cameraInputRef.current.value = '';
+    if (galleryInputRef.current) galleryInputRef.current.value = '';
+    setItems((prev) => prev.filter((it) => it.status !== 'done'));
+  }
+
+  /** Fallback for the rare failed upload — everything else sends automatically. */
+  async function retryFailed() {
+    setSending(true);
+    let ok = 0;
+    for (const item of items.filter((it) => it.status === 'error')) {
+      if (await uploadOne(item)) ok += 1;
+    }
+    if (ok > 0) {
+      setRollCount(addRollCount(slug, ok));
+      setFlash(true);
+      setTimeout(() => setFlash(false), 1700);
+    }
+    setSending(false);
     setItems((prev) => prev.filter((it) => it.status !== 'done'));
   }
 
   const remaining = Math.max(0, ROLL_SIZE - rollCount);
   const pending = items.filter((it) => it.status !== 'done').length;
+  const failed = items.filter((it) => it.status === 'error').length;
   const finished = remaining === 0 && !continued && pending === 0;
 
   return (
@@ -312,15 +374,41 @@ function Camera({
             <ShutterButton
               busy={sending}
               disabled={sending}
-              onClick={() => inputRef.current?.click()}
+              onClick={() => cameraInputRef.current?.click()}
             />
             <div className="flex items-center gap-2 text-xs text-surface-500">
               <span>preostalo</span>
               <FlipCounter value={remaining} />
-              <span>slika</span>
+              <span>{photoWord(remaining)}</span>
             </div>
+
+            <button
+              type="button"
+              onClick={() => galleryInputRef.current?.click()}
+              disabled={sending}
+              className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs text-primary-700
+                transition hover:bg-primary-900/5 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" aria-hidden="true">
+                <rect x="2.5" y="3.5" width="15" height="13" rx="2" stroke="currentColor" strokeWidth="1.4" />
+                <circle cx="6.5" cy="7.5" r="1.25" stroke="currentColor" strokeWidth="1.4" />
+                <path d="M3 14l4.5-4 3 2.5 3-3.5 4.5 5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              dodaj iz galerije
+            </button>
+
+            {/* Direct camera capture — opens the phone's camera app immediately. */}
             <input
-              ref={inputRef}
+              ref={cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => addFiles(e.target.files)}
+            />
+            {/* Gallery / library picker — secondary path, supports photos and videos. */}
+            <input
+              ref={galleryInputRef}
               type="file"
               accept="image/*,video/*"
               multiple
@@ -359,9 +447,9 @@ function Camera({
             </ul>
           )}
 
-          {pending > 0 && (
-            <button className="btn-primary w-full" onClick={sendAll} disabled={sending}>
-              {sending ? 'Šaljem…' : `Pošalji (${pending})`}
+          {failed > 0 && (
+            <button className="btn-primary w-full" onClick={retryFailed} disabled={sending}>
+              {sending ? 'Šaljem…' : `Pokušaj ponovo (${failed})`}
             </button>
           )}
         </>
