@@ -104,10 +104,23 @@ export class ExportProcessor {
     archive.on('error', (err) => passThrough.destroy(err));
 
     const seen = new Set<string>();
+    let included = 0;
     for (let i = 0; i < media.length; i++) {
       const m = media[i];
-      const stream = await this.storage.getObjectStream(m.storageKey);
-      archive.append(stream, { name: entryName(i + 1, m.guest.displayName, m.filename, seen) });
+      // A file can be missing from disk (e.g. an ephemeral-storage restart
+      // wiped it) without that being a reason to fail the whole ZIP — skip it
+      // and keep going instead of letting one bad stream hang the archive.
+      try {
+        if (!(await this.storage.objectExists(m.storageKey))) {
+          this.logger.warn(`Export ${exportId}: skipping missing object ${m.storageKey}`);
+          continue;
+        }
+        const stream = await this.storage.getObjectStream(m.storageKey);
+        archive.append(stream, { name: entryName(i + 1, m.guest.displayName, m.filename, seen) });
+        included += 1;
+      } catch (err) {
+        this.logger.warn(`Export ${exportId}: skipping ${m.storageKey} (${(err as Error).message})`);
+      }
 
       if (i % 5 === 0 || i === media.length - 1) {
         await this.prisma.galleryExport.update({
@@ -115,6 +128,19 @@ export class ExportProcessor {
           data: { progress: Math.min(95, Math.floor(((i + 1) / media.length) * 90)) },
         });
       }
+    }
+
+    if (included === 0) {
+      passThrough.destroy();
+      await this.prisma.galleryExport.update({
+        where: { id: exportId },
+        data: {
+          status: 'failed',
+          error: 'Fotografije nisu dostupne na serveru — pokušaj ponovo kasnije',
+          completedAt: new Date(),
+        },
+      });
+      return;
     }
 
     await archive.finalize();
@@ -126,11 +152,11 @@ export class ExportProcessor {
         status: 'ready',
         progress: 100,
         storageKey: zipKey,
-        fileCount: media.length,
+        fileCount: included,
         completedAt: new Date(),
       },
     });
-    this.logger.log(`Export ${exportId} ready (${media.length} files)`);
+    this.logger.log(`Export ${exportId} ready (${included}/${media.length} files)`);
   }
 }
 

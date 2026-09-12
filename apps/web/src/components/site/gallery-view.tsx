@@ -8,7 +8,7 @@ import { getGalleryAccess, clearGalleryAccess, getGuestSession, clearGuestSessio
 import { formatDate } from '@/lib/format';
 import { PinGate } from '../pin-gate';
 import { NameForm } from './name-form';
-import { FeedPost, FeedLightbox } from './feed-post';
+import { ProfileGrid, FeedLightbox } from './feed-post';
 import { Wordmark } from './logo';
 
 const PAGE_SIZE = 24;
@@ -218,11 +218,7 @@ export function GalleryView({ event }: { event: PublicEventDto }) {
             : 'Još nisi okinuo/la nijednu fotografiju — vrati se na kameru i uslikaj prvu!'}
         </div>
       ) : (
-        <div className="divide-y divide-surface-200">
-          {items.map((item) => (
-            <FeedPost key={item.id} item={item} onOpen={() => setLightbox(item)} />
-          ))}
-        </div>
+        <ProfileGrid items={items} onOpen={setLightbox} />
       )}
 
       <div ref={sentinel} className="h-8" />

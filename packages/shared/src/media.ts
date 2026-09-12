@@ -61,10 +61,12 @@ export interface MediaItemDto {
   id: string;
   type: MediaType;
   status: MediaStatus;
-  /** Short-lived presigned GET URL for the full asset. */
+  /** Short-lived presigned GET URL for the full asset (inline display). */
   url: string;
   /** Presigned GET URL for the thumbnail, or `url` when no thumbnail exists yet. */
   thumbnailUrl: string;
+  /** Same asset as `url`, but forces a save-to-device download (Content-Disposition). */
+  downloadUrl: string;
   guestName: string;
   createdAt: string;
 }

@@ -188,11 +188,15 @@ export class MediaService {
   }
 
   async toDto(media: MediaItem, guestName: string): Promise<MediaItemDto> {
-    const [url, thumbnailUrl] = await Promise.all([
+    const [url, thumbnailUrl, downloadUrl] = await Promise.all([
       this.storage.createDownloadUrl({ key: media.storageKey }),
       media.thumbnailKey
         ? this.storage.createDownloadUrl({ key: media.thumbnailKey })
         : this.storage.createDownloadUrl({ key: media.storageKey }),
+      this.storage.createDownloadUrl({
+        key: media.storageKey,
+        downloadFilename: media.filename || `tren-${media.id}${extensionFor(media.filename, media.contentType)}`,
+      }),
     ]);
     return {
       id: media.id,
@@ -200,6 +204,7 @@ export class MediaService {
       status: media.status,
       url,
       thumbnailUrl,
+      downloadUrl,
       guestName,
       createdAt: media.createdAt.toISOString(),
     };

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { MediaItemDto, Paginated } from '@tren/shared';
 import { organizerApi } from '@/lib/browser-api';
-import { FeedPost, FeedLightbox } from '@/components/site/feed-post';
+import { ProfileGrid, FeedLightbox } from '@/components/site/feed-post';
 
 const PAGE_SIZE = 24;
 
@@ -90,11 +90,7 @@ export function OwnerFeed({ eventId }: { eventId: string }) {
 
   return (
     <div className="mx-auto max-w-md">
-      <div className="divide-y divide-surface-200">
-        {items.map((item) => (
-          <FeedPost key={item.id} item={item} onOpen={() => setLightbox(item)} />
-        ))}
-      </div>
+      <ProfileGrid items={items} onOpen={setLightbox} />
       <div ref={sentinel} className="h-8" />
       {loadingMore && <p className="py-4 text-center text-xs text-surface-400">Učitavam još…</p>}
       {!cursor && items.length > PAGE_SIZE && (
